@@ -1,6 +1,9 @@
 const OpenAI = require("openai");
 const axios = require("axios");
 require("dotenv").config();
+const {
+  sleep,  
+} = require('./helpers.js')
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
@@ -15,7 +18,7 @@ let poisonHistory = {};
 // Global game state tracker
 let gameState = {
   gold: 0,
-  inventory: [],
+  inventory: {},
   market: [],
   ownedItems: {},
 };
@@ -24,22 +27,29 @@ function parseInventoryResponse(response) {
   const goldMatch = response.match(/Gold:\s?(\d+)/);
   gameState.gold = goldMatch ? parseInt(goldMatch[1], 10) : 0;
 
-  gameState.inventory = response
-    .split('\n')
-    .filter(line => line.includes("Gold:"))
-    .map(line => line.trim());
+  const lines = response.split('\n').map(line => line.trim());
 
-  gameState.ownedItems = {}; // Reset before updating
+  gameState.inventory = {}; // Reset inventory
 
-  gameState.inventory.forEach(line => {
-    const itemMatch = line.match(/[\u{1F300}-\u{1F6FF}]*\s?(.*?)\s?\(.*?\)/u);
-    if (itemMatch) {
-      const name = itemMatch[1].trim();
-      gameState.ownedItems[name] = true;
+  let inItemsSection = false;
+
+  for (const line of lines) {
+    if (line.startsWith("Items:")) {
+      inItemsSection = true;
+      continue;
     }
-  });
+
+    if (inItemsSection) {
+      const itemMatch = line.match(/^[a-f0-9\-]+:\s+(.*?)\s+-/i);
+      if (itemMatch) {
+        const itemName = itemMatch[1].trim();
+        gameState.inventory[itemName] = (gameState.inventory[itemName] || 0) + 1;
+      }
+    }
+  }
 
   console.log("📦 Inventory gold:", gameState.gold);
+  console.log("📦 Inventory items:", gameState.inventory);
 }
 
 function parseMarketResponse(response) {
@@ -62,14 +72,14 @@ function parseMarketResponse(response) {
   console.log("🛒 Market Items:", gameState.market);
 }
 
-async function decidePurchases(client) {
-  if (gameState.gold < 15000) {
-    console.log("💰 Not enough gold to buy anything (requires 15,000+)");
+async function decidePurchases(client) { 
+  if (gameState.gold < 25000) {
+    console.log("💰 Not enough gold to buy anything (requires 25,000+)");
     return;
   }
 
   const affordableMarket = gameState.market.filter(item => {
-    if (item.name === 'Poison of Recovery' && item.price > 70000) return false;
+    if (item.name === 'Poison of Recovery' && item.price <= 60000) return false;
     return true;
   });
 
@@ -82,11 +92,25 @@ async function decidePurchases(client) {
 
   const responseText = `Gold: ${gameState.gold}\n\nMarket:\n${filteredMarket
     .map(item => `[${item.index}] ${item.name} - ${item.description} - ${item.price} gold`)
-    .join("\n")}`;
+    .join("\n")}\n\n
+    Inventory: ${Object.keys(gameState.inventory).map((item) => `\n - ${item} x ${gameState.inventory[item]}`)}`;    
 
-  const prompt = `You are a strategy expert for a fishing RPG game. Based on the player's current gold and the market options, suggest if we should buy anything. Only buy one of each item unless it's stackable. Do NOT suggest buying overpriced items. Respond ONLY with the /buy command and the number, or "no".`;
+  const prompt = `You are a strategy buyer for a fishing game. 
+  Based on the player's current gold, inventory, and the market options, suggest if we should buy anything. 
+  Only a max of 5 of each item. Do NOT suggest buying overpriced items.
+  If the market have any duplicate, buy the cheapest one.  
+  Take into consideration how many I have on the inventory to decide,
+  try to always buy the limit.   
+  The ones that have priority are the Enhanced Fishing Rod and Poison of Leveling.  
+  Try to get more of the priority items. 
+  Respond ONLY with the /buy command and the number of the option (Don't add a break line).
+  If you want to buy more than one of the same item, it should be multiple /buy commands.
+  All the /buy commands you responde, separete them by a "|".
+  If there is nothing to buy responde with a "no".`;
 
   const fullPrompt = `${prompt}\n\n${responseText}`;
+
+  console.log('FUll Promtp', fullPrompt);
 
   const completion = await openai.chat.completions.create({
     model: "gpt-4",
@@ -98,11 +122,18 @@ async function decidePurchases(client) {
 
   const decision = completion.choices[0].message.content.trim();
 
+  console.log('decision', decision);
+
   if (decision.toLowerCase() === "no") {
     console.log("🧠 GPT Decision: No purchase needed");
   } else {
     console.log("🧠 GPT Decision:", decision);
-    client.write(`${decision}\n`);
+    const decisionList = decision.split('|')
+    for(const index in decisionList){      
+      client.write(`${decisionList[index]}\n`);
+      await sleep(1000)
+    }
+    
   }
 }
 
