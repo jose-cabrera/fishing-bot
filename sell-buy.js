@@ -3,7 +3,7 @@ const readline = require('readline');
 const {
     parseInventoryResponse,
     parseMarketResponse,
-    decidePurchases,    
+    decideEat,
     decideSell,
   } = require('./smart_market.js');
 const {
@@ -66,15 +66,7 @@ async function connect() {
     }
     
     if(text.includes('MARKET ITEMS')) {                
-        parseMarketResponse(text);
-        if (gameState.selling) {
-          await decideSell(client);          
-        }
-                
-        if(gameState.buying){
-          await decidePurchases(client);
-        }
-        
+        parseMarketResponse(text);                                        
     }
   
     // Inventory handler
@@ -183,12 +175,16 @@ function setupUserInput() {
   rl.on('line', async (input) => {
     const command = input.trim();
         
-      if (isConnected) {
-        client.write(command + '\n');
-        console.log(`➡️ Sent manual command: "${command}"`);
-      } else {
-        console.log('⚠️ Cannot send, not connected.');
-      }    
+    if (command.includes('decide-eat')) {      
+      await decideEat(client);
+    } else if (command.includes('decide-sell')){
+      await decideSell(client);
+    } else if (isConnected) {
+      client.write(command + '\n');
+      console.log(`➡️ Sent manual command: "${command}"`);
+    } else {
+      console.log('⚠️ Cannot send, not connected.');
+    }    
   });
 }
 

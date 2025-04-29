@@ -15,6 +15,8 @@ const POISON_TRIGGER_COUNT = 6;
 
 const INVENTORY_INTERVAL = 60000; // Real 5 minuts 300000
 
+const OVERPRICED = 10000;
+
 module.exports = { 
     HOST,
     PORT,
@@ -29,5 +31,6 @@ module.exports = {
     INVENTORY_TRIGGER_COUNT,
     MARKET_TRIGGER_COUNT,
     POISON_TRIGGER_COUNT,
-    INVENTORY_INTERVAL
+    INVENTORY_INTERVAL,
+    OVERPRICED
 }
